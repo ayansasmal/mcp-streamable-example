@@ -32,5 +32,5 @@ out/
 # Coverage
 coverage/
 
-# Data
-/data/*.csv
+# # Data
+# /data/*.csv
