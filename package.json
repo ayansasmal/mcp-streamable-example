@@ -9,6 +9,7 @@
     "dev:fallback": "ts-node-dev --respawn --transpile-only src/server.ts",
     "start": "node dist/server.js",
     "clean": "rm -rf dist",
+    "generate-data": "node scripts/generate-sample-data.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "test:streaming": "ts-node-dev --transpile-only --files test-streaming-chunks.ts",
     "test:client": "node test-mcp-client.js"
