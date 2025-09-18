@@ -52,4 +52,5 @@ export interface ServerConfig {
   host: string;
   databasePath?: string;
   csvFilePath: string;
+  sessionTTL?: number; // Session time-to-live in milliseconds (default: 30 min)
 }
