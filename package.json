@@ -1,0 +1,39 @@
+{
+  "name": "mcp-duckdb-server",
+  "version": "1.0.0",
+  "description": "MCP server with DuckDB integration using StreamableHttpTransport",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "node --experimental-strip-types src/server.ts",
+    "dev:fallback": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "start": "node dist/server.js",
+    "clean": "rm -rf dist",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:streaming": "ts-node-dev --transpile-only --files test-streaming-chunks.ts",
+    "test:client": "node test-mcp-client.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "duckdb",
+    "typescript",
+    "streamable-http"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@duckdb/node-api": "^1.3.4-alpha.27",
+    "@modelcontextprotocol/sdk": "^1.18.0",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.10.5",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

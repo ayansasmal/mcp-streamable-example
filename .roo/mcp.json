@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "mcp-duck-db": {
+      "type": "streamable-http",
+      "url": "http://localhost:3000/mcp",
+      "disabled": false
+    }
+  }
+}
