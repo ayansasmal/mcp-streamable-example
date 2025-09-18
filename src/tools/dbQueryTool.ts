@@ -48,7 +48,62 @@ export class DbQueryTool {
   }
 
   /**
-   * Execute the database query tool
+   * Execute the database query tool with streaming results
+   * This is the new method that yields results row-by-row as { type: "text", text: JSON.stringify(row) }
+   */
+  async streamExecute(input: DbQueryToolInput): Promise<any> {
+    try {
+      // Validate input
+      if (!input.sql || typeof input.sql !== 'string') {
+        throw new Error('SQL query is required and must be a string');
+      }
+
+      // Validate SQL query for security
+      if (!this.dbManager.validateQuery(input.sql)) {
+        throw new Error('Invalid SQL query. Only SELECT statements are allowed. Dangerous keywords (DROP, DELETE, UPDATE, INSERT, etc.) are not permitted.');
+      }
+
+      // Apply limit if specified
+      let sql = input.sql.trim();
+      if (input.limit && input.limit > 0) {
+        // Check if query already has a LIMIT clause
+        if (!sql.toLowerCase().includes('limit')) {
+          sql += ` LIMIT ${input.limit}`;
+        }
+      }
+
+      // Stream results row-by-row
+      const content: Array<{ type: string; text: string }> = [];
+      let rowCount = 0;
+
+      // Execute streaming query and collect each row
+      for await (const dbChunk of this.dbManager.executeStreamingQuery(sql, [], 1)) {
+        for (const row of dbChunk) {
+          content.push({
+            type: 'text',
+            text: JSON.stringify(row)
+          });
+          rowCount++;
+        }
+      }
+
+      return {
+        content: content,
+        _meta: {
+          totalRows: rowCount,
+          streamingEnabled: true,
+          timestamp: new Date().toISOString()
+        }
+      };
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(errorMessage);
+    }
+  }
+
+  /**
+   * Execute the database query tool (legacy method - maintained for compatibility)
    */
   async execute(input: DbQueryToolInput): Promise<string> {
     try {

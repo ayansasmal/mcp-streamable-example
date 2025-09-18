@@ -1,5 +1,5 @@
 import express from 'express';
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { Server } from '@modelcontextprotocol/sdk/server';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { DatabaseManager } from './database/db';
@@ -9,52 +9,53 @@ import path from 'path';
 import crypto from 'crypto';
 
 /**
+ * Session management interface
+ */
+interface SessionInfo {
+  server: Server;
+  transport: StreamableHTTPServerTransport;
+  createdAt: Date;
+  lastAccessed: Date;
+}
+
+/**
  * Main MCP Server implementation with StreamableHttpTransport
  */
 class MCPDuckDBServer {
-  private server: Server;
   private dbManager: DatabaseManager;
   private dbQueryTool: DbQueryTool;
   private config: ServerConfig;
   private app: express.Application;
-  private sessions: Map<string, { server: Server; transport: StreamableHTTPServerTransport }> = new Map();
+  private sessions: Map<string, SessionInfo> = new Map();
+  private sessionTTL: number = 30 * 60 * 1000; // 30 minutes default
 
   constructor(config: ServerConfig) {
     this.config = config;
     this.app = express();
     this.dbManager = new DatabaseManager();
     this.dbQueryTool = new DbQueryTool(this.dbManager);
+    
+    // Set configurable session TTL
+    this.sessionTTL = config.sessionTTL || 30 * 60 * 1000; // Default 30 minutes
 
-    // Initialize MCP Server
-    this.server = new Server(
-      {
-        name: 'mcp-duckdb-server',
-        version: '1.0.0',
-        description: 'MCP server with DuckDB integration for employee data queries'
-      },
-      {
-        capabilities: {
-          tools: {}
-        }
-      }
-    );
-
-    this.setupHandlers();
+    // Set up session cleanup interval
+    setInterval(() => this.cleanupExpiredSessions(), 5 * 60 * 1000); // Check every 5 minutes
   }
 
   /**
-   * Set up MCP server request handlers
+   * Attach MCP request handlers to a server instance
+   * This eliminates duplication by providing a reusable handler setup function
    */
-  private setupHandlers(): void {
+  private attachHandlers(server: Server): void {
     // Handle list tools request
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
       return {
         tools: [this.dbQueryTool.getToolDefinition()]
       };
     });
 
     // Handle call tool request
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
 
       if (name === 'dbQueryTool') {
@@ -62,26 +63,17 @@ class MCPDuckDBServer {
           if (!args) {
             throw new Error('Arguments are required for dbQueryTool');
           }
-          const result = await this.dbQueryTool.execute(args as any);
-          return {
-            content: [
-              {
-                type: 'text',
-                text: result
-              }
-            ]
-          };
+          
+          // Use the new streaming execute method
+          const result = await this.dbQueryTool.streamExecute(args as any);
+          return result;
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
           return {
             content: [
               {
                 type: 'text',
-                text: JSON.stringify({
-                  error: true,
-                  message: errorMessage,
-                  timestamp: new Date().toISOString()
-                }, null, 2)
+                text: errorMessage // Plain text instead of JSON.stringify
               }
             ],
             isError: true
@@ -94,6 +86,31 @@ class MCPDuckDBServer {
   }
 
   /**
+   * Clean up expired sessions
+   */
+  private cleanupExpiredSessions(): void {
+    const now = new Date();
+    const expiredSessions: string[] = [];
+
+    for (const [sessionId, session] of this.sessions.entries()) {
+      if (now.getTime() - session.lastAccessed.getTime() > this.sessionTTL) {
+        expiredSessions.push(sessionId);
+      }
+    }
+
+    for (const sessionId of expiredSessions) {
+      console.log(`Cleaning up expired session: ${sessionId}`);
+      this.sessions.delete(sessionId);
+    }
+
+    if (expiredSessions.length > 0) {
+      console.log(`Cleaned up ${expiredSessions.length} expired sessions`);
+    }
+  }
+
+
+
+  /**
    * Initialize the server
    */
   async initialize(): Promise<void> {
@@ -104,21 +121,21 @@ class MCPDuckDBServer {
       await this.dbManager.initialize(this.config.csvFilePath);
       console.log('Database initialized successfully with expanded dataset (70 employees)');
 
-      // Set up Express middleware for non-MCP routes
+      // Simplified Express middleware for /mcp route
       this.app.use((req, res, next) => {
         if (req.path.startsWith('/mcp')) {
-          // Skip JSON parsing for MCP routes - let transport handle raw body
+          // Skip all middleware processing for MCP routes - let transport handle raw body
           next();
         } else {
+          // Apply standard middleware for other routes
           express.json()(req, res, next);
         }
       });
-      this.app.use(express.urlencoded({ extended: true }));
 
       // Add CORS headers for development
       this.app.use((req, res, next) => {
         res.header('Access-Control-Allow-Origin', '*');
-        res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+        res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, mcp-session-id');
         res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
         if (req.method === 'OPTIONS') {
           res.sendStatus(200);
@@ -133,7 +150,8 @@ class MCPDuckDBServer {
           status: 'healthy',
           server: 'mcp-duckdb-server',
           version: '1.0.0',
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          activeSessions: this.sessions.size
         });
       });
 
@@ -150,10 +168,30 @@ class MCPDuckDBServer {
         }
       });
 
-      // Set up HTTP route for MCP communication with session management
+      // DELETE endpoint for manual session termination
+      this.app.delete('/mcp/:sessionId', (req, res) => {
+        const sessionId = req.params.sessionId;
+        
+        if (this.sessions.has(sessionId)) {
+          this.sessions.delete(sessionId);
+          console.log(`Manually terminated session: ${sessionId}`);
+          res.json({ 
+            success: true, 
+            message: `Session ${sessionId} terminated successfully` 
+          });
+        } else {
+          res.status(404).json({ 
+            success: false, 
+            message: `Session ${sessionId} not found` 
+          });
+        }
+      });
+
+      // Set up HTTP route for MCP communication with enhanced session management
       this.app.post('/mcp', async (req, res) => {
         try {
           const sessionId = req.headers['mcp-session-id'] as string || crypto.randomUUID();
+          const now = new Date();
 
           let session = this.sessions.get(sessionId);
 
@@ -178,65 +216,24 @@ class MCPDuckDBServer {
               }
             );
 
-            // Set up handlers for this session's server
-            server.setRequestHandler(ListToolsRequestSchema, async () => {
-              return {
-                tools: [this.dbQueryTool.getToolDefinition()]
-              };
-            });
-
-            server.setRequestHandler(CallToolRequestSchema, async (request) => {
-              const { name, arguments: args } = request.params;
-
-              if (name === 'dbQueryTool') {
-                try {
-                  if (!args) {
-                    throw new Error('Arguments are required for dbQueryTool');
-                  }
-                  const result = await this.dbQueryTool.execute(args as any);
-                  return {
-                    content: [
-                      {
-                        type: 'text',
-                        text: result
-                      }
-                    ]
-                  };
-                } catch (error) {
-                  const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-                  return {
-                    content: [
-                      {
-                        type: 'text',
-                        text: JSON.stringify({
-                          error: true,
-                          message: errorMessage,
-                          timestamp: new Date().toISOString()
-                        }, null, 2)
-                      }
-                    ],
-                    isError: true
-                  };
-                }
-              }
-
-              throw new Error(`Unknown tool: ${name}`);
-            });
+            // Use the extracted handler attachment method to avoid duplication
+            this.attachHandlers(server);
 
             // Connect server to transport
             await server.connect(transport);
 
-            // Store session
-            session = { server, transport };
+            // Store session with enhanced tracking
+            session = { 
+              server, 
+              transport, 
+              createdAt: now, 
+              lastAccessed: now 
+            };
             this.sessions.set(sessionId, session);
-
-            // Clean up session after some time (optional)
-            setTimeout(() => {
-              console.log(`Cleaning up session: ${sessionId}`);
-              this.sessions.delete(sessionId);
-            }, 30 * 60 * 1000); // 30 minutes
           } else {
             console.log(`Reusing existing MCP session: ${sessionId}`);
+            // Update last accessed time
+            session.lastAccessed = now;
           }
 
           // Handle the request with the session's transport
@@ -257,7 +254,7 @@ class MCPDuckDBServer {
         }
       });
 
-      console.log('MCP server configured with StreamableHTTPTransport');
+      console.log(`MCP server configured with StreamableHTTPTransport (Session TTL: ${this.sessionTTL / 1000}s)`);
 
     } catch (error) {
       console.error('Failed to initialize server:', error);
