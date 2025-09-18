@@ -4,13 +4,13 @@ A Model Context Protocol (MCP) server implementation with DuckDB integration and
 
 ## Overview
 
-This project implements a production-ready MCP server that provides database query capabilities through a `dbQueryTool`. The server streams query results in real-time chunks of 10 rows, making it ideal for handling large datasets efficiently.
+This project implements a production-ready MCP server that provides database query capabilities through a `dbQueryTool`. The server streams query results in real-time chunks of 5 rows (with a 1-second delay between chunks), making it ideal for handling large datasets efficiently and for LLM/agent demos.
 
 ## Features
 
 - 🚀 **StreamableHTTPServerTransport**: Modern MCP transport with HTTP-based streaming
 - 🗄️ **DuckDB Integration**: In-memory database with CSV data loading
-- 📊 **Real-time Streaming**: Query results delivered in 10-row chunks
+- 📊 **Real-time Streaming**: Query results delivered in 5-row chunks (with 1-second delay)
 - 🔒 **Security**: SQL validation (SELECT only) with injection protection
 - ⚡ **TypeScript**: Full type safety with modern Node.js support
 - 📈 **Scalable**: Handles large datasets without memory issues
@@ -67,8 +67,8 @@ graph LR
     end
 
     subgraph "Streaming Engine"
-        D --> E[Buffer 10 rows]
-        E --> F[Yield Chunk Event]
+        D --> E[Buffer 5 rows]
+        E --> F[Yield Chunk Event (1s delay)]
         F --> G{More Data?}
         G -->|Yes| E
         G -->|No| H[Complete Event]
@@ -129,9 +129,9 @@ sequenceDiagram
         Tool->>DB: Read 50 rows
         DB-->>Tool: Data chunk
 
-        loop For each 10-row stream chunk
-            Tool-->>Transport: data_chunk event
-            Transport-->>Client: SSE: data_chunk (10 rows)
+    loop For each 5-row stream chunk
+      Tool-->>Transport: data_chunk event
+      Transport-->>Client: SSE: data_chunk (5 rows, 1s delay)
         end
     end
 
@@ -166,6 +166,7 @@ sequenceDiagram
 ## Event Types
 
 ### Query Start Event
+
 ```json
 {
   "type": "query_start",
@@ -178,22 +179,34 @@ sequenceDiagram
 ```
 
 ### Data Chunk Event
+
 ```json
 {
   "type": "data_chunk",
   "data": {
     "chunk": [
-      {"employeeId": 1, "employeeName": "John Smith", "location": "New York", "startDate": "2020-01-15"},
-      {"employeeId": 2, "employeeName": "Sarah Johnson", "location": "San Francisco", "startDate": "2019-03-22"}
+      {
+        "employeeId": 1,
+        "employeeName": "John Smith",
+        "location": "New York",
+        "startDate": "2020-01-15"
+      },
+      {
+        "employeeId": 2,
+        "employeeName": "Sarah Johnson",
+        "location": "San Francisco",
+        "startDate": "2019-03-22"
+      }
     ],
     "chunkNumber": 1,
-    "rowsInChunk": 10,
-    "totalRowsSoFar": 10
+    "rowsInChunk": 5,
+    "totalRowsSoFar": 5
   }
 }
 ```
 
 ### Query Complete Event
+
 ```json
 {
   "type": "query_complete",
@@ -209,10 +222,12 @@ sequenceDiagram
 ## Installation and Setup
 
 ### Prerequisites
+
 - Node.js 18+ (22+ recommended for native TypeScript support)
 - npm or yarn
 
 ### Installation
+
 ```bash
 # Clone the repository
 git clone <repository-url>
@@ -223,6 +238,7 @@ npm install
 ```
 
 ### Development Commands
+
 ```bash
 # Start development server (native TS support)
 npm run dev
@@ -243,11 +259,13 @@ npm run test:streaming
 ## Usage
 
 ### Starting the Server
+
 ```bash
 npm run dev
 ```
 
 The server will start on `http://localhost:3000` with the following endpoints:
+
 - **MCP Endpoint**: `http://localhost:3000/mcp`
 - **Health Check**: `http://localhost:3000/health`
 - **Schema Info**: `http://localhost:3000/schema`
@@ -255,6 +273,7 @@ The server will start on `http://localhost:3000` with the following endpoints:
 ### Connecting with MCP Client
 
 Configure your MCP client to connect to:
+
 ```
 http://localhost:3000/mcp
 ```
@@ -277,48 +296,55 @@ http://localhost:3000/mcp
 Perfect for demonstrating LLM integration! Here are natural language inputs that showcase the server's capabilities:
 
 #### 📊 **Basic Data Exploration**
-- *"How many employees do we have in total?"*
-- *"Show me all employees from California"*
-- *"List the first 10 employees with their details"*
-- *"What states do we have offices in?"*
+
+- _"How many employees do we have in total?"_
+- _"Show me all employees from California"_
+- _"List the first 10 employees with their details"_
+- _"What states do we have offices in?"_
 
 #### 💰 **Salary and Compensation Analysis**
-- *"What's the average salary by department?"*
-- *"Show me the highest paid employees"*
-- *"Which department has the highest payroll costs?"*
-- *"Find employees earning over $120,000"*
-- *"Compare average salaries between remote and office workers"*
+
+- _"What's the average salary by department?"_
+- _"Show me the highest paid employees"_
+- _"Which department has the highest payroll costs?"_
+- _"Find employees earning over $120,000"_
+- _"Compare average salaries between remote and office workers"_
 
 #### 🏆 **Career Development and Promotions**
-- *"Who is ready for promotion this year?"*
-- *"Show me employees who haven't been promoted in 3+ years"*
-- *"Which department promotes people most frequently?"*
-- *"Find high-potential candidates for leadership roles"*
-- *"Show the engineering career ladder progression"*
+
+- _"Who is ready for promotion this year?"_
+- _"Show me employees who haven't been promoted in 3+ years"_
+- _"Which department promotes people most frequently?"_
+- _"Find high-potential candidates for leadership roles"_
+- _"Show the engineering career ladder progression"_
 
 #### 🎉 **Anniversary and Recognition**
-- *"Who has 10-year anniversaries coming up?"*
-- *"Show me our longest-serving employees"*
-- *"Find employees celebrating 15 years with the company"*
-- *"List all VP-level employees and their tenure"*
+
+- _"Who has 10-year anniversaries coming up?"_
+- _"Show me our longest-serving employees"_
+- _"Find employees celebrating 15 years with the company"_
+- _"List all VP-level employees and their tenure"_
 
 #### 🏢 **Remote Work and Location Analysis**
-- *"What percentage of each department works remotely?"*
-- *"Which states have the most remote workers?"*
-- *"Show me office vs remote salary differences by department"*
-- *"Find all engineering managers who work remotely"*
+
+- _"What percentage of each department works remotely?"_
+- _"Which states have the most remote workers?"_
+- _"Show me office vs remote salary differences by department"_
+- _"Find all engineering managers who work remotely"_
 
 #### 📈 **Hiring and Growth Trends**
-- *"How many people did we hire each year since 2020?"*
-- *"What's our hiring trend by department over time?"*
-- *"Show me recent hires who might need performance reviews"*
-- *"Which year had the highest average starting salaries?"*
+
+- _"How many people did we hire each year since 2020?"_
+- _"What's our hiring trend by department over time?"_
+- _"Show me recent hires who might need performance reviews"_
+- _"Which year had the highest average starting salaries?"_
 
 #### 🔍 **Advanced Analytics**
-- *"Identify employees who might be flight risks based on promotion gaps"*
-- *"Show me salary outliers in each department"*
-- *"Find correlation between tenure and remote work preferences"*
-- *"Which employees have the steepest career progression?"*
+
+- _"Identify employees who might be flight risks based on promotion gaps"_
+- _"Show me salary outliers in each department"_
+- _"Find correlation between tenure and remote work preferences"_
+- _"Which employees have the steepest career progression?"_
 
 ### Sample SQL Queries
 
@@ -344,19 +370,20 @@ ORDER BY startDate;
 
 ## Database Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| employeeId | INTEGER | Unique employee identifier |
-| employeeName | VARCHAR | Full name of employee |
-| location | VARCHAR | Work location (US states) |
-| startDate | DATE | Employment start date |
-| department | VARCHAR | Engineering, Sales, Marketing, HR, Finance |
-| salary | INTEGER | Annual salary in USD |
-| position | VARCHAR | Job title (Software Engineer to VP level) |
-| isRemote | BOOLEAN | Remote work status |
-| lastPromoted | DATE | Date of last promotion (NULL if never promoted) |
+| Column       | Type    | Description                                     |
+| ------------ | ------- | ----------------------------------------------- |
+| employeeId   | INTEGER | Unique employee identifier                      |
+| employeeName | VARCHAR | Full name of employee                           |
+| location     | VARCHAR | Work location (US states)                       |
+| startDate    | DATE    | Employment start date                           |
+| department   | VARCHAR | Engineering, Sales, Marketing, HR, Finance      |
+| salary       | INTEGER | Annual salary in USD                            |
+| position     | VARCHAR | Job title (Software Engineer to VP level)       |
+| isRemote     | BOOLEAN | Remote work status                              |
+| lastPromoted | DATE    | Date of last promotion (NULL if never promoted) |
 
 ### Dataset Overview
+
 - **70 employees** across 8 US states
 - **Career progression**: 2018-2025 hires with realistic promotion timelines
 - **10-15 year veterans**: VP and Executive level positions
@@ -366,11 +393,13 @@ ORDER BY startDate;
 ## Configuration
 
 ### Environment Variables
+
 - `PORT`: Server port (default: 3000)
 - `HOST`: Server host (default: localhost)
 
 ### Streaming Configuration
-- **Stream Chunk Size**: 10 rows per event
+
+- **Stream Chunk Size**: 5 rows per event (with 1-second delay between chunks)
 - **Database Chunk Size**: 50 rows per database read
 - **Response Format**: JSON events via StreamableHTTP
 
@@ -385,6 +414,7 @@ ORDER BY startDate;
 ## Testing
 
 ### Manual Testing
+
 ```bash
 # Test health endpoint
 curl http://localhost:3000/health
@@ -399,20 +429,25 @@ npm run test:streaming
 ### Expected Streaming Behavior
 
 For a query returning 25 rows:
+
 1. **Event 1**: `query_start` with metadata
-2. **Event 2**: `data_chunk` with rows 1-10
-3. **Event 3**: `data_chunk` with rows 11-20
-4. **Event 4**: `data_chunk` with rows 21-25
-5. **Event 5**: `query_complete` with summary
+2. **Event 2**: `data_chunk` with rows 1-5 (after 1s delay)
+3. **Event 3**: `data_chunk` with rows 6-10 (after 1s delay)
+4. **Event 4**: `data_chunk` with rows 11-15 (after 1s delay)
+5. **Event 5**: `data_chunk` with rows 16-20 (after 1s delay)
+6. **Event 6**: `data_chunk` with rows 21-25 (after 1s delay)
+7. **Event 7**: `query_complete` with summary
 
 ## Dependencies
 
 ### Production
+
 - `@modelcontextprotocol/sdk@^1.18.0`: MCP protocol implementation
 - `@duckdb/node-api@^1.3.4-alpha.27`: Modern DuckDB client
 - `express@^4.21.2`: HTTP server framework
 
 ### Development
+
 - `typescript@^5.7.3`: TypeScript compiler
 - `ts-node-dev@^2.0.0`: Development runtime
 - `@types/node` & `@types/express`: Type definitions
@@ -453,6 +488,7 @@ MIT License - see LICENSE file for details.
 ## Support
 
 For issues and questions:
+
 - Create an issue in the GitHub repository
 - Check the CLAUDE.md file for development guidance
 - Review the MCP documentation at https://modelcontextprotocol.io
@@ -465,12 +501,12 @@ This MCP server is designed to showcase how LLMs can interact with structured da
 
 ### Demo Script for LLMs
 
-1. **Start with basics**: *"How many employees do we have?"*
-2. **Explore departments**: *"What's the breakdown by department?"*
-3. **Dive into salaries**: *"Show me salary ranges by department"*
-4. **Career progression**: *"Who needs promotions?"*
-5. **Remote work analysis**: *"How does remote work vary by location?"*
-6. **Advanced insights**: *"Find potential flight risks"*
+1. **Start with basics**: _"How many employees do we have?"_
+2. **Explore departments**: _"What's the breakdown by department?"_
+3. **Dive into salaries**: _"Show me salary ranges by department"_
+4. **Career progression**: _"Who needs promotions?"_
+5. **Remote work analysis**: _"How does remote work vary by location?"_
+6. **Advanced insights**: _"Find potential flight risks"_
 
 ### Sample LLM Conversation Flow
 
@@ -499,8 +535,9 @@ Found 12 employees ready for promotion:
 ```
 
 ### Key Demo Features
+
 - **Rich dataset**: 70 employees with 9 columns of realistic data
-- **Natural conversations**: Complex queries from simple questions  
+- **Natural conversations**: Complex queries from simple questions
 - **Real-time streaming**: 5-row chunks with 1-second delays
 - **Career insights**: Promotion analysis, salary trends, remote work patterns
 - **Multi-dimensional**: Location, department, tenure, salary, promotion data
@@ -508,4 +545,3 @@ Found 12 employees ready for promotion:
 ---
 
 **Built with ❤️ using Model Context Protocol and DuckDB**
-
